@@ -2,6 +2,7 @@
 Mock data for testing Strava API functionality.
 """
 import json
+import datetime
 from typing import Dict, Any, List
 
 # Example activity response
@@ -89,11 +90,15 @@ MOCK_SEGMENT = {
     "athlete_count": 5624,
     "hazardous": False,
     "star_count": 342,
+    "private": False,
+    "starred": True,
+    "fetched_at": datetime.datetime.now().isoformat(),
     "map": {
         "id": "s12345678",
         "polyline": "ki{eFvpcbCqAoK_DsWiG}g@",
         "resource_state": 3
-    }
+    },
+    "coordinate_points": "ki{eFvpcbCqAoK_DsWiG}g@"
 }
 
 # List of activities for testing
@@ -103,7 +108,11 @@ MOCK_ACTIVITIES = [
 ]
 
 # Mock segment efforts
-MOCK_SEGMENT_EFFORTS = [MOCK_SEGMENT_EFFORT]
+MOCK_SEGMENT_EFFORTS = [
+    MOCK_SEGMENT_EFFORT,
+    {**MOCK_SEGMENT_EFFORT, "id": 987654321123457, "elapsed_time": 162, "start_date": "2023-05-08T08:10:00Z"},
+    {**MOCK_SEGMENT_EFFORT, "id": 987654321123458, "elapsed_time": 148, "start_date": "2023-05-15T08:10:00Z"}
+]
 
 # Mock segment streams
 MOCK_SEGMENT_STREAMS = {

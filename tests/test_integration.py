@@ -79,10 +79,13 @@ class TestDataPipeline(unittest.TestCase):
     @patch('src.data_retrieval.get_activity_details')
     def test_fetch_and_store_segment_efforts(self, mock_get_activity, mock_make_request):
         """Test fetching segment efforts and storing them in the database."""
+        # Use only the first segment effort to simplify test
+        single_effort = [MOCK_SEGMENT_EFFORTS[0]]
+        
         # Configure mocks
         activity_with_efforts = {
             **MOCK_ACTIVITIES[0],
-            "segment_efforts": MOCK_SEGMENT_EFFORTS
+            "segment_efforts": single_effort
         }
         mock_get_activity.return_value = activity_with_efforts
         
@@ -91,6 +94,7 @@ class TestDataPipeline(unittest.TestCase):
         
         # Get segment efforts
         efforts = get_segment_efforts(MOCK_ACTIVITIES[0]['id'])
+        self.assertEqual(len(efforts), 1)  # Verify we're only dealing with one effort
         
         # Store segment efforts
         for effort in efforts:
