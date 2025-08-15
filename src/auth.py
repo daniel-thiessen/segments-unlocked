@@ -1,11 +1,17 @@
 import requests
 import time
 import webbrowser
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer as BaseHTTPServer, BaseHTTPRequestHandler
 import urllib.parse
 import threading
 import socket
 import json
+from typing import Optional, Dict, Any, Union, cast
+
+# Custom HTTP server with auth_code attribute
+class HTTPServer(BaseHTTPServer):
+    """Extended HTTP server with auth_code attribute"""
+    auth_code: Optional[str] = None
 
 from src.settings import (
     STRAVA_CLIENT_ID,
@@ -32,7 +38,9 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
         # Check if there's an authorization code
         if 'code' in query_components:
             auth_code = query_components['code'][0]
-            self.server.auth_code = auth_code
+            # Set auth_code on server (with type assertion)
+            server = cast(HTTPServer, self.server)
+            server.auth_code = auth_code
             self.wfile.write(b"<html><body><h1>Authentication successful!</h1>")
             self.wfile.write(b"<p>You can close this window now.</p></body></html>")
         else:
@@ -43,7 +51,7 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
         """Silence the server logs"""
         return
 
-def get_auth_url():
+def get_auth_url() -> str:
     """Generate the authorization URL for Strava OAuth"""
     params = {
         'client_id': STRAVA_CLIENT_ID,
@@ -57,12 +65,12 @@ def get_auth_url():
     auth_url += "&".join([f"{k}={v}" for k, v in params.items()])
     return auth_url
 
-def get_server_port():
+def get_server_port() -> int:
     """Extract port from redirect URI"""
     parsed_uri = urllib.parse.urlparse(STRAVA_REDIRECT_URI)
     return parsed_uri.port or 8000
 
-def exchange_code_for_token(code):
+def exchange_code_for_token(code: str) -> Optional[Dict[str, Any]]:
     """Exchange authorization code for access token"""
     payload = {
         'client_id': STRAVA_CLIENT_ID,
@@ -78,7 +86,7 @@ def exchange_code_for_token(code):
         print(f"Error exchanging code for token: {response.text}")
         return None
 
-def refresh_access_token(refresh_token):
+def refresh_access_token(refresh_token: str) -> Optional[Dict[str, Any]]:
     """Refresh the access token using the refresh token"""
     payload = {
         'client_id': STRAVA_CLIENT_ID,
@@ -94,7 +102,7 @@ def refresh_access_token(refresh_token):
         print(f"Error refreshing token: {response.text}")
         return None
 
-def authenticate():
+def authenticate() -> Dict[str, Any]:
     """Run the full OAuth flow to authenticate with Strava"""
     # Check if we already have tokens
     tokens = load_tokens()
@@ -119,7 +127,7 @@ def authenticate():
     server_address = ('', server_port)
     
     httpd = HTTPServer(server_address, OAuthCallbackHandler)
-    httpd.auth_code = None
+    # auth_code already set to None in class definition
     
     # Start the server in a separate thread
     server_thread = threading.Thread(target=httpd.serve_forever)
@@ -137,8 +145,11 @@ def authenticate():
     httpd.shutdown()
     server_thread.join()
     
+    # Get the authorization code (we know it's not None now)
+    auth_code = cast(str, httpd.auth_code)
+    
     # Exchange the authorization code for tokens
-    tokens = exchange_code_for_token(httpd.auth_code)
+    tokens = exchange_code_for_token(auth_code)
     
     if tokens:
         save_tokens(tokens)
@@ -146,7 +157,7 @@ def authenticate():
     else:
         raise Exception("Failed to get access token")
 
-def get_access_token():
+def get_access_token() -> str:
     """Get a valid access token, refreshing if necessary"""
     tokens = load_tokens()
     
@@ -154,13 +165,15 @@ def get_access_token():
         return authenticate()['access_token']
     
     # Check if token is expired
-    if tokens['expires_at'] < time.time():
-        tokens = refresh_access_token(tokens['refresh_token'])
-        if tokens:
-            save_tokens(tokens)
-            return tokens['access_token']
-        else:
-            return authenticate()['access_token']
+    if 'expires_at' in tokens and tokens['expires_at'] < time.time():
+        refresh_token = tokens.get('refresh_token')
+        if refresh_token:
+            new_tokens = refresh_access_token(refresh_token)
+            if new_tokens:
+                save_tokens(new_tokens)
+                return new_tokens['access_token']
+        # Fall back to re-authentication if refresh fails or no refresh token
+        return authenticate()['access_token']
     else:
         return tokens['access_token']
 
