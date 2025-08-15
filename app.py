@@ -13,6 +13,7 @@ from src.data_retrieval import get_activities, get_segment_efforts, get_segment_
 from src.storage import SegmentDatabase
 from src.analysis import SegmentAnalyzer
 from src.visualization import SegmentVisualizer
+from src.archive_import import ArchiveImporter
 
 # Set up logging
 logging.basicConfig(
@@ -192,6 +193,10 @@ def main():
     parser.add_argument('--visualize', action='store_true', help='Generate visualizations')
     parser.add_argument('--refresh-days', type=int, default=30, 
                         help='Number of days after which segment data should be refreshed')
+    parser.add_argument('--import-archive', type=str, metavar='PATH',
+                        help='Import activities from a Strava archive export (ZIP file or extracted directory)')
+    parser.add_argument('--fetch-segment-details', action='store_true',
+                        help='Fetch additional segment details for imported segments from the Strava API')
     
     args = parser.parse_args()
     
@@ -210,6 +215,26 @@ def main():
         # Create database connection
         db = SegmentDatabase()
         
+        if args.import_archive:
+            # Import data from Strava archive
+            archive_path = args.import_archive
+            importer = ArchiveImporter(db)
+            
+            logger.info(f"Importing data from Strava archive: {archive_path}")
+            try:
+                if archive_path.lower().endswith('.zip'):
+                    activities, efforts, segments = importer.import_from_zip(archive_path)
+                else:
+                    activities, efforts, segments = importer.import_from_directory(archive_path)
+                    
+                logger.info(f"Successfully imported {activities} activities with {efforts} segment efforts across {segments} unique segments")
+                
+                if args.fetch_segment_details:
+                    updated = importer.fetch_missing_segment_details()
+                    logger.info(f"Updated {updated} segments with additional details from the Strava API")
+            except Exception as e:
+                logger.error(f"Error importing archive: {e}", exc_info=True)
+        
         if args.fetch:
             # Fetch activities
             activities = fetch_activities(db, args.limit)
@@ -218,8 +243,8 @@ def main():
             effort_count = fetch_segment_efforts(db, activities, args.refresh_days)
             logger.info(f"Fetched and stored {effort_count} segment efforts")
         
-        if args.visualize or not args.fetch:
-            # Generate visualizations (default action if no flags)
+        if args.visualize or (not args.fetch and not args.import_archive):
+            # Generate visualizations (default action if no other flags)
             generate_visualizations(db)
         
         db.close()
