@@ -209,7 +209,7 @@ class SegmentAnalyzer:
         
         # Calculate average improvement rate (seconds per day)
         if days_training > 0:
-            improvement_rate = time_improvement / days_training
+            improvement_rate = float(time_improvement) / days_training
         else:
             improvement_rate = 0
         
@@ -250,8 +250,8 @@ class SegmentAnalyzer:
         df['days_since_start'] = (df['start_date'] - first_date).dt.days
         
         # Calculate linear fit
-        x = df['days_since_start'].values
-        y = df['elapsed_time'].values
+        x = df['days_since_start'].values.astype(float)  # Convert to float for polyfit
+        y = df['elapsed_time'].values.astype(float)      # Convert to float for polyfit
         
         # Simple linear regression
         if len(x) > 1:

@@ -156,7 +156,8 @@ class TestDataPipeline(unittest.TestCase):
             # Verify segments were stored
             segment = self.db.get_segment_by_id(MOCK_SEGMENT['id'])
             self.assertIsNotNone(segment)
-            self.assertEqual(segment['name'], MOCK_SEGMENT['name'])
+            if segment:  # Add a check to satisfy Pylance
+                self.assertEqual(segment['name'], MOCK_SEGMENT['name'])
             
             # Verify efforts were stored
             efforts = self.db.get_segment_efforts_by_segment(MOCK_SEGMENT['id'])

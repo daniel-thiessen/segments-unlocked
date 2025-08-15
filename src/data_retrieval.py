@@ -60,7 +60,7 @@ def make_api_request(endpoint: str, params: Optional[Dict] = None, method: str =
         return response.json()
     except requests.exceptions.RequestException as e:
         logger.error(f"API request failed: {e}")
-        if hasattr(e.response, 'text'):
+        if hasattr(e, 'response') and e.response is not None and hasattr(e.response, 'text'):
             logger.error(f"Response: {e.response.text}")
         raise
 
