@@ -222,14 +222,16 @@ def main():
             
             logger.info(f"Importing data from Strava archive: {archive_path}")
             try:
+                fetch_segments = args.fetch_segment_details
+                
                 if archive_path.lower().endswith('.zip'):
-                    activities, efforts, segments = importer.import_from_zip(archive_path)
+                    activities, efforts, segments = importer.import_from_zip(archive_path, fetch_segments=fetch_segments)
                 else:
-                    activities, efforts, segments = importer.import_from_directory(archive_path)
+                    activities, efforts, segments = importer.import_from_directory(archive_path, fetch_segments=fetch_segments)
                     
                 logger.info(f"Successfully imported {activities} activities with {efforts} segment efforts across {segments} unique segments")
                 
-                if args.fetch_segment_details:
+                if args.fetch_segment_details and not fetch_segments:
                     updated = importer.fetch_missing_segment_details()
                     logger.info(f"Updated {updated} segments with additional details from the Strava API")
             except Exception as e:
