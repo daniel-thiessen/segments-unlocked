@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import argparse
 import time
 import webbrowser
+from datetime import datetime, timedelta
 from typing import List, Dict, Any
 import sys
 
@@ -83,22 +84,28 @@ def fetch_activities(db: SegmentDatabase, limit: int = 50) -> List[Dict]:
         
     return activities
 
-def fetch_segment_efforts(db: SegmentDatabase, activities: List[Dict]) -> int:
+def fetch_segment_efforts(db: SegmentDatabase, activities: List[Dict], refresh_threshold_days: int = 30) -> int:
     """
     Fetch segment efforts for activities and store them
     
     Args:
         db: Database connection
         activities: List of activities to process
+        refresh_threshold_days: Number of days after which segment data should be refreshed
         
     Returns:
         Number of segment efforts found
     """
     total_efforts = 0
+    processed_segments = set()  # Track already processed segments to avoid duplicates
+    refresh_threshold = datetime.now() - timedelta(days=refresh_threshold_days)
     
     for activity in activities:
         activity_id = activity['id']
         logger.info(f"Fetching segment efforts for activity {activity['name']}")
+        
+        # Add small delay between activity requests
+        time.sleep(1)
         
         efforts = get_segment_efforts(activity_id)
         logger.info(f"Found {len(efforts)} segment efforts")
@@ -106,10 +113,45 @@ def fetch_segment_efforts(db: SegmentDatabase, activities: List[Dict]) -> int:
         for effort in efforts:
             db.save_segment_effort(effort)
             
-            # Also save the segment definition
+            # Also save the segment definition (only if not already in the database)
             segment_id = effort['segment']['id']
-            segment_detail = get_segment_details(segment_id)
-            db.save_segment(segment_detail)
+            if segment_id not in processed_segments:
+                processed_segments.add(segment_id)
+                # First check if we already have this segment in the database
+                existing_segment = db.get_segment_by_id(segment_id)
+                
+                if existing_segment is None:
+                    # Segment doesn't exist, fetch from API
+                    try:
+                        logger.info(f"Fetching details for new segment {segment_id}")
+                        segment_detail = get_segment_details(segment_id)
+                        db.save_segment(segment_detail)
+                        # Add a small delay between segment detail requests to avoid rate limiting
+                        time.sleep(0.5)
+                    except Exception as e:
+                        logger.warning(f"Could not fetch details for segment {segment_id}: {e}")
+                else:
+                    # Check if segment data needs to be refreshed (based on fetched_at timestamp)
+                    needs_refresh = False
+                    if existing_segment.get('fetched_at'):
+                        try:
+                            fetched_date = datetime.fromisoformat(existing_segment['fetched_at'])
+                            if fetched_date < refresh_threshold:
+                                needs_refresh = True
+                                logger.info(f"Refreshing segment {segment_id} data (last updated: {fetched_date.date()})")
+                        except (ValueError, TypeError):
+                            # If we can't parse the date, refresh the data
+                            needs_refresh = True
+                    
+                    if needs_refresh:
+                        try:
+                            segment_detail = get_segment_details(segment_id)
+                            db.save_segment(segment_detail)
+                            time.sleep(0.5)
+                        except Exception as e:
+                            logger.warning(f"Could not refresh segment {segment_id}: {e}")
+                    else:
+                        logger.debug(f"Using cached data for segment {segment_id} ({existing_segment['name']})")
         
         total_efforts += len(efforts)
     
@@ -148,6 +190,8 @@ def main():
     parser.add_argument('--fetch', action='store_true', help='Fetch new data from Strava')
     parser.add_argument('--limit', type=int, default=50, help='Number of activities to fetch')
     parser.add_argument('--visualize', action='store_true', help='Generate visualizations')
+    parser.add_argument('--refresh-days', type=int, default=30, 
+                        help='Number of days after which segment data should be refreshed')
     
     args = parser.parse_args()
     
@@ -171,7 +215,7 @@ def main():
             activities = fetch_activities(db, args.limit)
             
             # Fetch segment efforts
-            effort_count = fetch_segment_efforts(db, activities)
+            effort_count = fetch_segment_efforts(db, activities, args.refresh_days)
             logger.info(f"Fetched and stored {effort_count} segment efforts")
         
         if args.visualize or not args.fetch:

@@ -123,40 +123,59 @@ class TestDataRetrieval(unittest.TestCase):
         )
 
     @patch('src.data_retrieval.time')
-    def test_rate_limiting(self, mock_time):
+    @patch('src.data_retrieval.random')
+    def test_rate_limiting(self, mock_random, mock_time):
         """Test rate limiting functionality."""
         # Setup
         mock_time.time.return_value = 1000.0
+        # Prevent random delays for testing
+        mock_random.uniform.return_value = 0
 
         # Reset global variables to a known state for testing
         import src.data_retrieval
         src.data_retrieval.last_request_time = 0
         src.data_retrieval.request_count = 0
+        
+        # Track sleep calls
+        sleep_calls = []
+        original_sleep = mock_time.sleep
+        
+        def mock_sleep_func(seconds):
+            sleep_calls.append(seconds)
+            return None  # Don't actually sleep in tests
+        
+        mock_time.sleep = mock_sleep_func
 
         # Execute - first call
         rate_limit_request()
         
-        # Assert - first call shouldn't sleep
-        mock_time.sleep.assert_not_called()
+        # Assert - should have a small random delay sleep
+        self.assertEqual(len(sleep_calls), 1)
         self.assertEqual(src.data_retrieval.request_count, 1)
 
-        # Setup for approaching rate limit
-        src.data_retrieval.request_count = 99
-
-        # Execute - approaching limit
+        # Setup for approaching rate limit but still under threshold
+        src.data_retrieval.request_count = 85  # Below our buffer (90)
+        sleep_calls.clear()
+        
+        # Execute - should only have small delay
         rate_limit_request()
+        
+        # Assert - only small delay, count increments
+        self.assertEqual(len(sleep_calls), 1)
+        self.assertEqual(sleep_calls[0], 0)  # Our mocked random delay
+        self.assertEqual(src.data_retrieval.request_count, 86)
 
-        # Assert - should still not sleep
-        mock_time.sleep.assert_not_called()
-        self.assertEqual(src.data_retrieval.request_count, 100)
-
-        # Execute - hit limit
+        # Setup for hitting rate limit
+        src.data_retrieval.request_count = 95  # Above our buffer threshold (90)
+        sleep_calls.clear()
+        
+        # Execute - should have rate limit sleep
         rate_limit_request()
-
-        # Assert - should sleep
-        mock_time.sleep.assert_called_once()
-        # After sleep, count should be reset to 1
-        self.assertEqual(src.data_retrieval.request_count, 1)
+        
+        # Assert - should have longer sleep followed by random delay
+        self.assertEqual(len(sleep_calls), 2)  # Rate limit sleep + random delay
+        self.assertTrue(sleep_calls[0] > 1.0)  # First sleep should be substantial
+        self.assertEqual(src.data_retrieval.request_count, 1)  # Counter should reset to 1 after rate limit
 
 
 if __name__ == '__main__':
