@@ -474,7 +474,7 @@ class SegmentVisualizer:
                 
                 <div class="nav-links">
                     <a href="segments_summary.html" class="nav-link">Most Popular Segments</a>
-                    <a href="recent_segments.html" class="nav-link">Recently Active Segments</a>
+                    <a href="recent_activities.html" class="nav-link">Recent Activities</a>
                 </div>
                 
                 <table>
