@@ -2,7 +2,7 @@ import os
 import sqlite3
 import json
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.settings import DB_PATH
 
@@ -474,6 +474,45 @@ class SegmentDatabase:
             (segment_id, limit)
         )
         return [dict(row) for row in cursor.fetchall()]
+    
+    def get_segments_by_recent_activity(self, days: int = 30, limit: int = 10) -> List[Tuple[int, str, str, str]]:
+        """
+        Get segments that have been active in the recent time period
+        
+        Args:
+            days: Number of days to look back
+            limit: Maximum number of segments to retrieve
+            
+        Returns:
+            List of (segment_id, segment_name, last_activity_date, activity_name) tuples
+        """
+        # Calculate the cutoff date
+        cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+        
+        cursor = self.conn.execute(
+            '''
+            SELECT 
+                s.id as segment_id, 
+                s.name as segment_name, 
+                MAX(se.start_date) as last_activity_date,
+                a.name as activity_name
+            FROM segment_efforts se
+            JOIN segments s ON se.segment_id = s.id
+            JOIN activities a ON se.activity_id = a.id
+            WHERE se.start_date > ?
+            GROUP BY s.id
+            ORDER BY last_activity_date DESC
+            LIMIT ?
+            ''',
+            (cutoff_date, limit)
+        )
+        
+        return [(
+            row['segment_id'], 
+            row['segment_name'],
+            row['last_activity_date'],
+            row['activity_name']
+        ) for row in cursor.fetchall()]
     
     def close(self):
         """Close the database connection"""

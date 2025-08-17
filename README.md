@@ -58,6 +58,12 @@ python app.py --fetch --limit 100
 
 # Generate visualizations after fetching data
 python app.py --fetch --visualize
+
+# View segments by recent activity
+python app.py --recent
+
+# View segments from the last 60 days
+python app.py --recent --recent-days 60
 ```
 
 ### Import from Strava Archive

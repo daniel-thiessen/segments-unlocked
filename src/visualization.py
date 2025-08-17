@@ -9,6 +9,7 @@ import polyline
 import io
 import base64
 import logging
+from datetime import datetime, timedelta
 from typing import Any, Optional, Union, Dict, List, Tuple, TypeVar, cast
 
 # Define a type for folium.Map for better type checking
@@ -459,6 +460,9 @@ class SegmentVisualizer:
                 .segment-link { color: #0066cc; text-decoration: none; }
                 .segment-link:hover { text-decoration: underline; }
                 h1, h2 { color: #333; }
+                .nav-links { margin: 20px 0; }
+                .nav-link { padding: 10px; background-color: #f0f0f0; text-decoration: none; color: #333; border-radius: 5px; margin-right: 10px; }
+                .nav-link:hover { background-color: #e0e0e0; }
             </style>
         </head>
         <body>
@@ -466,6 +470,11 @@ class SegmentVisualizer:
                 <div class="header">
                     <h1>Your Segment Analysis</h1>
                     <p>Top segments based on number of attempts</p>
+                </div>
+                
+                <div class="nav-links">
+                    <a href="segments_summary.html" class="nav-link">Most Popular Segments</a>
+                    <a href="recent_segments.html" class="nav-link">Recently Active Segments</a>
                 </div>
                 
                 <table>
@@ -508,6 +517,105 @@ class SegmentVisualizer:
             f.write(html)
         
         logger.info(f"Summary dashboard saved to {output_path}")
+        
+        return html
+        
+    def create_recent_segments_dashboard(self, days: int = 30, limit: int = 10) -> str:
+        """
+        Create a dashboard showing segments from recent activities
+        
+        Args:
+            days: Number of days to look back
+            limit: Maximum number of segments to include
+            
+        Returns:
+            HTML content
+        """
+        # Get recently active segments
+        recent_segments = self.db.get_segments_by_recent_activity(days, limit)
+        
+        if not recent_segments:
+            return "<h1>No recent segment data available</h1>"
+        
+        # Format date for title
+        from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        to_date = datetime.now().strftime("%Y-%m-%d")
+        
+        # Create HTML content
+        html = f"""
+        <html>
+        <head>
+            <title>Recently Active Segments</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; }}
+                .container {{ max-width: 1200px; margin: 0 auto; }}
+                .header {{ background-color: #f4f4f4; padding: 20px; border-radius: 5px; margin-bottom: 20px; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+                th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+                th {{ background-color: #f2f2f2; }}
+                tr:hover {{ background-color: #f5f5f5; }}
+                .segment-link {{ color: #0066cc; text-decoration: none; }}
+                .segment-link:hover {{ text-decoration: underline; }}
+                h1, h2 {{ color: #333; }}
+                .nav-links {{ margin: 20px 0; }}
+                .nav-link {{ padding: 10px; background-color: #f0f0f0; text-decoration: none; color: #333; border-radius: 5px; margin-right: 10px; }}
+                .nav-link:hover {{ background-color: #e0e0e0; }}
+                .date-highlight {{ color: #0066cc; font-weight: bold; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Recently Active Segments</h1>
+                    <p>Segments from activities between <span class="date-highlight">{from_date}</span> and <span class="date-highlight">{to_date}</span></p>
+                </div>
+                
+                <div class="nav-links">
+                    <a href="segments_summary.html" class="nav-link">Most Popular Segments</a>
+                    <a href="recent_segments.html" class="nav-link">Recently Active Segments</a>
+                </div>
+                
+                <table>
+                    <tr>
+                        <th>Segment</th>
+                        <th>Last Activity</th>
+                        <th>Activity Name</th>
+                        <th>Actions</th>
+                    </tr>
+        """
+        
+        for segment_id, segment_name, last_activity_date, activity_name in recent_segments:
+            segment_url = f"segment_{segment_id}.html"
+            
+            # Format the date for display
+            try:
+                date_obj = datetime.fromisoformat(last_activity_date.replace('Z', '+00:00'))
+                formatted_date = date_obj.strftime("%Y-%m-%d %H:%M")
+            except (ValueError, AttributeError):
+                formatted_date = last_activity_date
+            
+            html += f"""
+                    <tr>
+                        <td>{segment_name}</td>
+                        <td>{formatted_date}</td>
+                        <td>{activity_name}</td>
+                        <td><a href="{segment_url}" class="segment-link">View Analysis</a></td>
+                    </tr>
+            """
+        
+        html += """
+                </table>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Save HTML to file
+        output_path = os.path.join(self.output_dir, "recent_segments.html")
+        with open(output_path, 'w') as f:
+            f.write(html)
+        
+        logger.info(f"Recent segments dashboard saved to {output_path}")
         
         return html
 

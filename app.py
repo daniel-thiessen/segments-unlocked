@@ -164,12 +164,14 @@ def fetch_segment_efforts(db: SegmentDatabase, activities: List[Dict], refresh_t
     
     return total_efforts
 
-def generate_visualizations(db: SegmentDatabase) -> None:
+def generate_visualizations(db: SegmentDatabase, view_recent: bool = False, recent_days: int = 30) -> None:
     """
     Generate visualizations for segments
     
     Args:
         db: Database connection
+        view_recent: Whether to view segments by recent activity
+        recent_days: Number of days to look back for recent segments
     """
     analyzer = SegmentAnalyzer(db)
     visualizer = SegmentVisualizer(db, analyzer)
@@ -186,10 +188,20 @@ def generate_visualizations(db: SegmentDatabase) -> None:
     summary_path = os.path.join(os.path.dirname(__file__), 'output', 'segments_summary.html')
     visualizer.create_segments_summary_dashboard()
     
-    # Open dashboard in browser
-    if popular_segments:
-        logger.info(f"Opening dashboard: {summary_path}")
-        webbrowser.open(f"file://{summary_path}")
+    # Create recent segments dashboard if requested
+    if view_recent:
+        recent_path = os.path.join(os.path.dirname(__file__), 'output', 'recent_segments.html')
+        logger.info(f"Creating dashboard for segments active in the last {recent_days} days")
+        visualizer.create_recent_segments_dashboard(days=recent_days)
+        
+        # Open recent segments dashboard in browser
+        logger.info(f"Opening dashboard: {recent_path}")
+        webbrowser.open(f"file://{recent_path}")
+    else:
+        # Open regular summary dashboard in browser
+        if popular_segments:
+            logger.info(f"Opening dashboard: {summary_path}")
+            webbrowser.open(f"file://{summary_path}")
 
 def main():
     """
@@ -207,6 +219,10 @@ This application provides several functions:
                         help='Fetch only new activities since the last pull')
     parser.add_argument('--limit', type=int, default=50, help='Number of activities to fetch')
     parser.add_argument('--visualize', action='store_true', help='Generate visualizations')
+    parser.add_argument('--recent', action='store_true',
+                        help='View segments by recent activity')
+    parser.add_argument('--recent-days', type=int, default=30,
+                        help='Number of days to look back for recent segments')
     parser.add_argument('--refresh-days', type=int, default=30, 
                         help='Number of days after which segment data should be refreshed')
     parser.add_argument('--import-archive', type=str, metavar='PATH',
@@ -271,9 +287,9 @@ This application provides several functions:
             effort_count = fetch_segment_efforts(db, activities, args.refresh_days)
             logger.info(f"Fetched and stored {effort_count} segment efforts")
         
-        if args.visualize or (not args.fetch and not args.import_archive):
+        if args.visualize or (not args.fetch and not args.fetch_new and not args.import_archive):
             # Generate visualizations (default action if no other flags)
-            generate_visualizations(db)
+            generate_visualizations(db, view_recent=args.recent, recent_days=args.recent_days)
         
         db.close()
         logger.info("Application completed successfully")
