@@ -520,22 +520,22 @@ class SegmentVisualizer:
         
         return html
         
-    def create_recent_segments_dashboard(self, days: int = 30, limit: int = 10) -> str:
+    def create_recent_activities_dashboard(self, days: int = 30, limit: int = 10) -> str:
         """
-        Create a dashboard showing segments from recent activities
+        Create a dashboard showing recent activities with segment information
         
         Args:
             days: Number of days to look back
-            limit: Maximum number of segments to include
+            limit: Maximum number of activities to include
             
         Returns:
             HTML content
         """
-        # Get recently active segments
-        recent_segments = self.db.get_segments_by_recent_activity(days, limit)
+        # Get recent activities
+        recent_activities = self.db.get_recent_activities(days, limit)
         
-        if not recent_segments:
-            return "<h1>No recent segment data available</h1>"
+        if not recent_activities:
+            return "<h1>No recent activity data available</h1>"
         
         # Format date for title
         from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -545,11 +545,139 @@ class SegmentVisualizer:
         html = f"""
         <html>
         <head>
-            <title>Recently Active Segments</title>
+            <title>Recent Activities</title>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; }}
                 .container {{ max-width: 1200px; margin: 0 auto; }}
                 .header {{ background-color: #f4f4f4; padding: 20px; border-radius: 5px; margin-bottom: 20px; }}
+                table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+                th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+                th {{ background-color: #f2f2f2; }}
+                tr:hover {{ background-color: #f5f5f5; }}
+                .activity-link {{ color: #0066cc; text-decoration: none; }}
+                .activity-link:hover {{ text-decoration: underline; }}
+                h1, h2 {{ color: #333; }}
+                .nav-links {{ margin: 20px 0; }}
+                .nav-link {{ padding: 10px; background-color: #f0f0f0; text-decoration: none; color: #333; border-radius: 5px; margin-right: 10px; }}
+                .nav-link:hover {{ background-color: #e0e0e0; }}
+                .date-highlight {{ color: #0066cc; font-weight: bold; }}
+                .segment-count {{ font-weight: bold; color: #ff5722; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Recent Activities</h1>
+                    <p>Activities between <span class="date-highlight">{from_date}</span> and <span class="date-highlight">{to_date}</span></p>
+                </div>
+                
+                <div class="nav-links">
+                    <a href="segments_summary.html" class="nav-link">Most Popular Segments</a>
+                    <a href="recent_activities.html" class="nav-link">Recent Activities</a>
+                </div>
+                
+                <table>
+                    <tr>
+                        <th>Activity</th>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Distance</th>
+                        <th>Segments</th>
+                        <th>Actions</th>
+                    </tr>
+        """
+        
+        for activity in recent_activities:
+            # Create a details page for this activity's segments
+            if activity['segment_count'] > 0:
+                self.create_activity_segments_dashboard(activity['id'])
+                activity_url = f"activity_{activity['id']}.html"
+                view_action = f'<a href="{activity_url}" class="activity-link">View Segments</a>'
+            else:
+                view_action = 'No segments'
+            
+            # Format the date for display
+            try:
+                date_obj = datetime.fromisoformat(activity['start_date'].replace('Z', '+00:00'))
+                formatted_date = date_obj.strftime("%Y-%m-%d %H:%M")
+            except (ValueError, AttributeError):
+                formatted_date = activity['start_date']
+            
+            # Format distance in km
+            distance_km = round(activity['distance'] / 1000, 2) if activity['distance'] else 0
+            
+            html += f"""
+                    <tr>
+                        <td>{activity['name']}</td>
+                        <td>{formatted_date}</td>
+                        <td>{activity['type']}</td>
+                        <td>{distance_km:.2f} km</td>
+                        <td class="segment-count">{activity['segment_count']}</td>
+                        <td>{view_action}</td>
+                    </tr>
+            """
+        
+        html += """
+                </table>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Save HTML to file
+        output_path = os.path.join(self.output_dir, "recent_activities.html")
+        with open(output_path, 'w') as f:
+            f.write(html)
+        
+        logger.info(f"Recent activities dashboard saved to {output_path}")
+        
+        return html
+        
+    def create_activity_segments_dashboard(self, activity_id: int) -> str:
+        """
+        Create a dashboard showing segments for a specific activity
+        
+        Args:
+            activity_id: Activity ID
+            
+        Returns:
+            HTML content
+        """
+        # Get the activity details
+        cursor = self.db.conn.execute(
+            'SELECT * FROM activities WHERE id = ?',
+            (activity_id,)
+        )
+        
+        row = cursor.fetchone()
+        activity = dict(row) if row is not None else None
+        
+        if not activity:
+            return f"<h1>Activity {activity_id} not found</h1>"
+        
+        # Get segments for this activity
+        segments = self.db.get_segments_by_activity(activity_id)
+        
+        if not segments:
+            return f"<h1>No segments found for activity {activity['name']}</h1>"
+        
+        # Format date for display
+        try:
+            date_obj = datetime.fromisoformat(activity['start_date'].replace('Z', '+00:00'))
+            formatted_date = date_obj.strftime("%Y-%m-%d %H:%M")
+        except (ValueError, AttributeError):
+            formatted_date = activity['start_date']
+        
+        # Create HTML content
+        html = f"""
+        <html>
+        <head>
+            <title>Segments for {activity['name']}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; }}
+                .container {{ max-width: 1200px; margin: 0 auto; }}
+                .header {{ background-color: #f4f4f4; padding: 20px; border-radius: 5px; margin-bottom: 20px; }}
+                .activity-meta {{ margin: 10px 0; color: #666; }}
                 table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
                 th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
                 th {{ background-color: #f2f2f2; }}
@@ -560,45 +688,55 @@ class SegmentVisualizer:
                 .nav-links {{ margin: 20px 0; }}
                 .nav-link {{ padding: 10px; background-color: #f0f0f0; text-decoration: none; color: #333; border-radius: 5px; margin-right: 10px; }}
                 .nav-link:hover {{ background-color: #e0e0e0; }}
-                .date-highlight {{ color: #0066cc; font-weight: bold; }}
+                .pr-rank {{ font-weight: bold; color: #ff5722; }}
+                .pr-rank-1 {{ color: #2e7d32; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Recently Active Segments</h1>
-                    <p>Segments from activities between <span class="date-highlight">{from_date}</span> and <span class="date-highlight">{to_date}</span></p>
+                    <h1>Segments for {activity['name']}</h1>
+                    <div class="activity-meta">
+                        <p>Date: {formatted_date}</p>
+                        <p>Type: {activity['type']}</p>
+                        <p>Distance: {activity['distance']/1000:.2f} km</p>
+                        <p>Time: {activity['moving_time']//60}:{activity['moving_time']%60:02d}</p>
+                    </div>
                 </div>
                 
                 <div class="nav-links">
                     <a href="segments_summary.html" class="nav-link">Most Popular Segments</a>
-                    <a href="recent_segments.html" class="nav-link">Recently Active Segments</a>
+                    <a href="recent_activities.html" class="nav-link">Recent Activities</a>
                 </div>
                 
                 <table>
                     <tr>
                         <th>Segment</th>
-                        <th>Last Activity</th>
-                        <th>Activity Name</th>
+                        <th>Distance</th>
+                        <th>Grade</th>
+                        <th>Time</th>
+                        <th>PR</th>
                         <th>Actions</th>
                     </tr>
         """
         
-        for segment_id, segment_name, last_activity_date, activity_name in recent_segments:
-            segment_url = f"segment_{segment_id}.html"
+        for segment in segments:
+            segment_url = f"segment_{segment['segment_id']}.html"
             
-            # Format the date for display
-            try:
-                date_obj = datetime.fromisoformat(last_activity_date.replace('Z', '+00:00'))
-                formatted_date = date_obj.strftime("%Y-%m-%d %H:%M")
-            except (ValueError, AttributeError):
-                formatted_date = last_activity_date
+            # Format time as mm:ss
+            elapsed_time_formatted = f"{segment['elapsed_time']//60}:{segment['elapsed_time']%60:02d}"
+            
+            # Format PR rank with special styling
+            pr_class = "pr-rank pr-rank-1" if segment.get('pr_rank') == 1 else "pr-rank"
+            pr_rank_display = f'<span class="{pr_class}">#{segment["pr_rank"]}</span>' if segment.get('pr_rank') else '-'
             
             html += f"""
                     <tr>
-                        <td>{segment_name}</td>
-                        <td>{formatted_date}</td>
-                        <td>{activity_name}</td>
+                        <td>{segment['segment_name']}</td>
+                        <td>{segment['segment_distance']/1000:.2f} km</td>
+                        <td>{segment['average_grade']:.1f}% (max {segment['maximum_grade']:.1f}%)</td>
+                        <td>{elapsed_time_formatted}</td>
+                        <td>{pr_rank_display}</td>
                         <td><a href="{segment_url}" class="segment-link">View Analysis</a></td>
                     </tr>
             """
@@ -611,11 +749,11 @@ class SegmentVisualizer:
         """
         
         # Save HTML to file
-        output_path = os.path.join(self.output_dir, "recent_segments.html")
+        output_path = os.path.join(self.output_dir, f"activity_{activity_id}.html")
         with open(output_path, 'w') as f:
             f.write(html)
         
-        logger.info(f"Recent segments dashboard saved to {output_path}")
+        logger.info(f"Activity segments dashboard saved to {output_path}")
         
         return html
 

@@ -513,6 +513,79 @@ class SegmentDatabase:
             row['last_activity_date'],
             row['activity_name']
         ) for row in cursor.fetchall()]
+        
+    def get_recent_activities(self, days: int = 30, limit: int = 10) -> List[Dict]:
+        """
+        Get activities from the recent time period
+        
+        Args:
+            days: Number of days to look back
+            limit: Maximum number of activities to retrieve
+            
+        Returns:
+            List of activities with segment count information
+        """
+        # Calculate the cutoff date
+        cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+        
+        # First get the activities
+        cursor = self.conn.execute(
+            '''
+            SELECT a.* 
+            FROM activities a
+            WHERE a.start_date > ?
+            ORDER BY a.start_date DESC
+            LIMIT ?
+            ''',
+            (cutoff_date, limit)
+        )
+        
+        activities = [dict(row) for row in cursor.fetchall()]
+        
+        # For each activity, count the segments
+        for activity in activities:
+            cursor = self.conn.execute(
+                '''
+                SELECT COUNT(DISTINCT se.segment_id) as segment_count
+                FROM segment_efforts se
+                WHERE se.activity_id = ?
+                ''',
+                (activity['id'],)
+            )
+            
+            row = cursor.fetchone()
+            activity['segment_count'] = row['segment_count'] if row else 0
+        
+        return activities
+        
+    def get_segments_by_activity(self, activity_id: int) -> List[Dict]:
+        """
+        Get segments for a specific activity
+        
+        Args:
+            activity_id: Activity ID
+            
+        Returns:
+            List of segment efforts with segment details
+        """
+        cursor = self.conn.execute(
+            '''
+            SELECT 
+                se.*,
+                s.name as segment_name,
+                s.distance as segment_distance,
+                s.average_grade,
+                s.maximum_grade,
+                s.climb_category
+            FROM segment_efforts se
+            JOIN segments s ON se.segment_id = s.id
+            WHERE se.activity_id = ?
+            ORDER BY se.start_date ASC
+            ''',
+            (activity_id,)
+        )
+        
+        return [dict(row) for row in cursor.fetchall()]
     
     def close(self):
         """Close the database connection"""
