@@ -5,7 +5,7 @@ import argparse
 import time
 import webbrowser
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import sys
 
 from src.auth import authenticate
@@ -14,6 +14,7 @@ from src.storage import SegmentDatabase
 from src.analysis import SegmentAnalyzer
 from src.visualization import SegmentVisualizer
 from src.archive_import import ArchiveImporter
+from src.timestamp_utils import get_latest_activity_timestamp
 
 # Set up logging
 logging.basicConfig(
@@ -64,20 +65,25 @@ def setup_environment() -> bool:
     
     return True
 
-def fetch_activities(db: SegmentDatabase, limit: int = 50) -> List[Dict]:
+def fetch_activities(db: SegmentDatabase, limit: int = 50, after_date: Optional[int] = None) -> List[Dict]:
     """
     Fetch activities from Strava and store them
     
     Args:
         db: Database connection
         limit: Maximum number of activities to fetch
+        after_date: Only fetch activities after this timestamp
         
     Returns:
         List of fetched activities
     """
-    logger.info(f"Fetching up to {limit} recent activities from Strava...")
+    if after_date:
+        after_date_str = datetime.fromtimestamp(after_date).strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"Fetching up to {limit} activities since {after_date_str}...")
+    else:
+        logger.info(f"Fetching up to {limit} recent activities from Strava...")
     
-    activities = get_activities(limit)
+    activities = get_activities(limit, after_date)
     logger.info(f"Retrieved {len(activities)} activities")
     
     for activity in activities:
@@ -186,9 +192,19 @@ def generate_visualizations(db: SegmentDatabase) -> None:
         webbrowser.open(f"file://{summary_path}")
 
 def main():
-    """Main application entry point"""
+    """
+Main application entry point
+
+This application provides several functions:
+1. Fetch activities from Strava API (all or only new ones since last pull)
+2. Import activities from Strava archive exports (ZIP or directory)
+3. Generate visualizations for segment efforts
+4. Analyze segment performance over time
+"""
     parser = argparse.ArgumentParser(description='Personal Strava segment tracker')
     parser.add_argument('--fetch', action='store_true', help='Fetch new data from Strava')
+    parser.add_argument('--fetch-new', action='store_true', 
+                        help='Fetch only new activities since the last pull')
     parser.add_argument('--limit', type=int, default=50, help='Number of activities to fetch')
     parser.add_argument('--visualize', action='store_true', help='Generate visualizations')
     parser.add_argument('--refresh-days', type=int, default=30, 
@@ -237,9 +253,19 @@ def main():
             except Exception as e:
                 logger.error(f"Error importing archive: {e}", exc_info=True)
         
-        if args.fetch:
+        if args.fetch or args.fetch_new:
+            # Determine if we need to fetch only new activities
+            after_date = None
+            if args.fetch_new:
+                after_date = get_latest_activity_timestamp()
+                if after_date:
+                    after_date_str = datetime.fromtimestamp(after_date).strftime("%Y-%m-%d %H:%M:%S")
+                    logger.info(f"Fetching activities after {after_date_str}")
+                else:
+                    logger.warning("No existing activities found. Fetching all activities.")
+            
             # Fetch activities
-            activities = fetch_activities(db, args.limit)
+            activities = fetch_activities(db, args.limit, after_date)
             
             # Fetch segment efforts
             effort_count = fetch_segment_efforts(db, activities, args.refresh_days)

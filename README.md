@@ -6,6 +6,7 @@ A personal Strava segment tracker that helps you analyze and visualize your perf
 
 - OAuth2 authentication with Strava
 - Retrieve your activities and segment efforts
+- Smart activity fetching (only new activities since last pull)
 - Import data from Strava activity archives to avoid API rate limiting
 - Store performance data locally
 - Analyze segment performance trends over time
@@ -21,7 +22,8 @@ segments-unlocked/
 │   ├── storage.py        # Database handling and storage operations
 │   ├── analysis.py       # Data processing and analytics
 │   ├── visualization.py  # Plotting and dashboard components
-│   └── archive_import.py # Import data from Strava activity archives
+│   ├── archive_import.py # Import data from Strava activity archives
+│   └── timestamp_utils.py # Utilities for timestamp operations
 ├── config/
 │   └── settings.py       # App configuration (tokens, IDs, etc.)
 ├── data/
@@ -47,6 +49,9 @@ python app.py
 
 # Fetch latest activities from Strava API
 python app.py --fetch
+
+# Fetch only new activities since the last pull
+python app.py --fetch-new
 
 # Fetch a specific number of activities
 python app.py --fetch --limit 100
