@@ -91,6 +91,24 @@ python app.py --fetch-segment-details  # Run this separately to backfill segment
 python app.py --import-archive path/to/your/strava_archive.zip --visualize
 ```
 
+### Recent Activities View
+
+You can view your recent activities and the segments within them using the recent activities dashboard:
+
+```bash
+# View recent activities from the past 30 days
+python app.py --recent-activities
+
+# Customize the lookback period (e.g., 60 days)
+python app.py --recent-activities --recent-days 60
+```
+
+This feature provides:
+- A list of your recent activities with segment counts
+- Detailed segment information for each activity
+- Performance data for each segment (times, PRs, etc.)
+- Navigation between activities and segment analysis pages
+
 ### Incremental Segment Data Backfilling
 
 When importing data from a Strava archive, you have the option to incrementally backfill segment details to enhance your local dataset:
