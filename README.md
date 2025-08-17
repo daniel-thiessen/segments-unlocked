@@ -74,12 +74,48 @@ python app.py --import-archive path/to/your/strava_archive.zip
 # Import from an already extracted archive directory
 python app.py --import-archive path/to/extracted/archive/directory
 
-# Import archive and fetch additional segment details
+# Import archive and fetch additional segment details during import
 python app.py --import-archive path/to/your/strava_archive.zip --fetch-segment-details
+
+# Import archive first, then backfill segment details incrementally later
+python app.py --import-archive path/to/your/strava_archive.zip
+python app.py --fetch-segment-details  # Run this separately to backfill segment data
 
 # Import archive and generate visualizations
 python app.py --import-archive path/to/your/strava_archive.zip --visualize
 ```
+
+### Incremental Segment Data Backfilling
+
+When importing data from a Strava archive, you have the option to incrementally backfill segment details to enhance your local dataset:
+
+1. **Understanding Strava Archives**:
+   - Strava archives may contain limited segment data in their export files.
+   - Full segment details (like exact coordinates, elevation profiles) may need to be fetched separately.
+
+2. **Two-phase approach**:
+   - **Initial Import**: Import activities and basic segment data from the archive.
+   - **Incremental Backfill**: Fetch detailed segment information from the Strava API.
+
+3. **Usage Options**:
+   - **Combined Operation**: `--import-archive path/to/archive --fetch-segment-details`  
+     Imports archive and immediately begins fetching segment details.
+   
+   - **Separated Operation**: 
+     ```
+     # First import the archive
+     python app.py --import-archive path/to/archive
+     
+     # Later, fetch segment details incrementally
+     python app.py --fetch-segment-details
+     ```
+     This approach is recommended for large archives to respect API rate limits.
+
+4. **Benefits**:
+   - Respects Strava API rate limits (200 requests per 15 minutes)
+   - Picks up where it left off if interrupted
+   - Only processes segments with incomplete data
+   - Enables better visualizations with complete segment information
 
 ## Dependencies
 
