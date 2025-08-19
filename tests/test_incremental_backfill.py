@@ -12,9 +12,9 @@ from unittest.mock import patch, MagicMock, PropertyMock
 
 # Import the modules to be tested
 from incremental_backfill import (
-    RateLimiter, StravaDatabase, StravaBackfill, 
-    safe_duration_to_seconds, load_env
+    RateLimiter, StravaDatabase, StravaBackfill
 )
+from src.env_utils import safe_duration_to_seconds, load_env
 
 class TestSafeDurationToSeconds(unittest.TestCase):
     """Test the safe_duration_to_seconds helper function"""

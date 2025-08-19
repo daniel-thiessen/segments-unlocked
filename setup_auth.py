@@ -16,6 +16,7 @@ import logging
 import urllib.parse
 from urllib.parse import urlencode
 import requests
+from src.env_utils import load_env
 
 # Configure logging
 logging.basicConfig(
@@ -83,23 +84,7 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
         return
 
 
-def load_env(file_path='.env'):
-    """Load environment variables from .env file"""
-    if not os.path.exists(file_path):
-        logger.error(f".env file not found at {file_path}")
-        return {}
-        
-    env_vars = {}
-    with open(file_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-                
-            key, value = line.split('=', 1)
-            env_vars[key.strip()] = value.strip()
-            
-    return env_vars
+# load_env function moved to src/env_utils.py
 
 
 def save_refresh_token(db_path, refresh_token):

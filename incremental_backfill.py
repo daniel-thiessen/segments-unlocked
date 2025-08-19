@@ -13,6 +13,7 @@ import logging
 from typing import Dict, List, Set, Tuple, Optional, Any, Union
 from datetime import datetime, timedelta
 from collections import defaultdict
+from src.env_utils import load_env, safe_duration_to_seconds
 
 # Third-party imports
 try:
@@ -86,32 +87,7 @@ class RateLimiter:
         self.calls.append(datetime.now())
         self.daily_calls += 1
 
-def safe_duration_to_seconds(duration_obj: Any) -> Optional[int]:
-    """
-    Safely extract seconds from a duration object, handling different stravalib versions.
-    
-    Args:
-        duration_obj: A duration object from stravalib, could be various implementations
-        
-    Returns:
-        Total seconds as int, or None if conversion fails
-    """
-    if duration_obj is None:
-        return None
-        
-    try:
-        # Try the timedelta interface with total_seconds
-        if hasattr(duration_obj, 'total_seconds'):
-            return int(duration_obj.total_seconds())
-        # Try direct seconds attribute
-        elif hasattr(duration_obj, 'seconds'):
-            return int(duration_obj.seconds)
-        # Try converting to int directly
-        else:
-            return int(duration_obj)
-    except (AttributeError, ValueError, TypeError) as e:
-        logger.warning(f"Could not convert duration to seconds: {e}")
-        return None
+# safe_duration_to_seconds function moved to src/env_utils.py
 
 
 class StravaDatabase:
@@ -431,23 +407,7 @@ class StravaBackfill:
         
         return processed_count
 
-def load_env(file_path='.env'):
-    """Load environment variables from .env file"""
-    if not os.path.exists(file_path):
-        logger.error(f".env file not found at {file_path}")
-        return {}
-        
-    env_vars = {}
-    with open(file_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-                
-            key, value = line.split('=', 1)
-            env_vars[key.strip()] = value.strip()
-            
-    return env_vars
+# load_env function moved to src/env_utils.py
 
 def get_refresh_token(db_path):
     """Get the latest refresh token from the database or tokens file"""
