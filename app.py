@@ -259,7 +259,7 @@ This application provides several functions:
                         help='View recent activities and their segments (default behavior)')
     parser.add_argument('--segments-summary', action='store_true',
                         help='View the segments summary dashboard instead of recent activities')
-    parser.add_argument('--recent-days', type=int, default=60,
+    parser.add_argument('--recent-days', type=int, default=20,
                         help='Number of days to look back for recent activities')
     parser.add_argument('--segment', type=int, metavar='ID',
                         help='View a specific segment dashboard with ID')

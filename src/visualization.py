@@ -545,7 +545,18 @@ class SegmentVisualizer:
             return "<h1>Segment not found</h1>"
         
         # Get progress data
-        progress = self.analyzer.calculate_segment_progress(segment_id)
+        try:
+            progress_data = self.analyzer.calculate_segment_progress(segment_id)
+            # Ensure progress is a dictionary
+            if isinstance(progress_data, dict):
+                progress = progress_data
+            else:
+                progress = None
+                # For tests or incomplete data
+                print(f"Warning: progress data for segment {segment_id} was not a dictionary")
+        except Exception as e:
+            print(f"Error getting progress data: {e}")
+            progress = None
         
         # Get prediction
         prediction = self.analyzer.predict_future_performance(segment_id)
@@ -600,7 +611,7 @@ class SegmentVisualizer:
                 <div class="header">
                     <h1>{segment['name']}</h1>
                     <p>Distance: {segment['distance']/1000:.2f} km | Average Grade: {segment['average_grade']:.1f}% | Location: {segment.get('city', 'N/A')}, {segment.get('country', 'N/A')}</p>
-                    <p>Elevation: Low {segment.get('elevation_low', 0):.1f}m | High {segment.get('elevation_high', 0):.1f}m | Gain {segment.get('total_elevation_gain', 0):.1f}m</p>
+                    <p>Elevation: Low {segment.get('elevation_low', 0):.1f}m | High {segment.get('elevation_high', 0):.1f}m | Gain {segment.get('elevation_high', 0) - segment.get('elevation_low', 0):.1f}m</p>
                 </div>
                 
                 <div class="nav-links">
@@ -619,14 +630,109 @@ class SegmentVisualizer:
             
         # Add elevation profile section
         if segment.get('elevation_high') is not None and segment.get('elevation_low') is not None:
-            elevation_gain = segment.get('total_elevation_gain', segment.get('elevation_high', 0) - segment.get('elevation_low', 0))
+            elevation_gain = segment.get('elevation_high', 0) - segment.get('elevation_low', 0)
             elevation_range = segment.get('elevation_high', 0) - segment.get('elevation_low', 0)
             
-            # Create a simple visual representation of the elevation profile
+            # Create a visual representation of the elevation profile
             profile_width = 100
             profile_height = 50
             
-            # Simple ASCII-style elevation profile visual
+            # Generate a realistic elevation profile
+            # Get the average grade and use it to create a more accurate profile
+            avg_grade = segment.get('average_grade', 0)
+            max_grade = segment.get('maximum_grade')
+            if max_grade is None or not isinstance(max_grade, (int, float)):
+                max_grade = avg_grade * 2 if avg_grade > 0 else 5
+            
+            # Create control points for the elevation profile
+            points = []
+            
+            # Starting point
+            points.append((0, profile_height))  # Start at bottom left
+            
+            # Create a realistic elevation profile with varied gradient
+            import random
+            random.seed(segment.get('id', 0))  # Use segment ID as seed for consistent randomness
+            
+            # Number of control points for the profile
+            num_points = 12
+            
+            # Generate control points for the elevation profile
+            last_y = profile_height  # Start at bottom
+            
+            # Define the basic elevation profile shape based on segment characteristics
+            if avg_grade > 0:  # It's a climb
+                # Create a more realistic climbing profile with variable grades
+                # Use more control points for longer segments
+                segment_distance = segment.get('distance', 1000)
+                if segment_distance > 2000:  # Longer segments get more detail
+                    num_points = 16
+                
+                # Create a climbing profile with varying steepness
+                for i in range(1, num_points):
+                    x_pos = profile_width * (i / num_points)
+                    
+                    # Position in the segment (0 to 1)
+                    position = i / num_points
+                    
+                    # Calculate the approximate elevation at this point based on average grade
+                    # but add variability to create a more realistic profile
+                    
+                    # Base elevation change at this point
+                    base_elev_change = position * elevation_gain
+                    
+                    # Add variability - more variability for steeper segments
+                    variability = max(5, abs(avg_grade)) / 100  # Scale variability based on grade
+                    
+                    # Segments typically have steeper and flatter sections
+                    # Create a pattern where some sections are steeper than others
+                    if position < 0.3:
+                        # Beginning section - often steeper for climbs
+                        factor = 1.2 + (random.random() * 0.4 - 0.2) * variability
+                    elif position < 0.7:
+                        # Middle section - can be variable
+                        factor = 0.9 + (random.random() * 0.6 - 0.3) * variability
+                    else:
+                        # End section - often steeper again near the end
+                        factor = 1.1 + (random.random() * 0.4 - 0.2) * variability
+                    
+                    # Calculate height based on relative position and total elevation gain
+                    # Invert Y because in SVG 0 is at top, but elevation 0 is at bottom
+                    y_pos = profile_height - (base_elev_change * factor / elevation_gain * profile_height)
+                    
+                    # Ensure y stays within bounds
+                    y_pos = max(0, min(profile_height, y_pos))
+                    
+                    points.append((x_pos, y_pos))
+                    last_y = y_pos
+            else:  # It's flat or a descent
+                # For descents, create a profile that starts higher and ends lower
+                for i in range(1, num_points):
+                    x_pos = profile_width * (i / num_points)
+                    position = i / num_points
+                    
+                    # For descents, we start higher and end lower
+                    # Base position goes from 0 to 1, but we invert for descent (1 to 0)
+                    base_elev_change = (1 - position) * abs(elevation_gain)
+                    
+                    # Add some variability
+                    variability = max(3, abs(avg_grade)) / 100
+                    factor = 1.0 + (random.random() * 0.4 - 0.2) * variability
+                    
+                    # Calculate height - higher values are lower on screen
+                    y_pos = profile_height - (base_elev_change * factor / abs(elevation_gain) * profile_height)
+                    y_pos = max(0, min(profile_height, y_pos))
+                    
+                    points.append((x_pos, y_pos))
+                    last_y = y_pos
+            
+            # End point (top right corner) - should match the elevation_high
+            points.append((profile_width, 0))
+            points.append((profile_width, profile_height))  # Back to bottom to close the polygon
+            
+            # Create clip-path polygon string from points
+            clip_path_points = " ".join([f"{x}% {y}px" for x, y in points])
+            
             html += f"""
                 <div class="stat-box" style="width: 100%; margin: 20px 0;">
                     <h2>Elevation Profile</h2>
@@ -636,42 +742,52 @@ class SegmentVisualizer:
                     </div>
                     <div style="background: linear-gradient(to right, #8BC34A, #FFC107, #F44336); 
                                 height: {profile_height}px; width: {profile_width}%; 
-                                clip-path: polygon(
-                                    0 {profile_height}px, 
-                                    {profile_width/4}% {int(profile_height*0.7)}px, 
-                                    {profile_width/2}% {int(profile_height*0.4)}px,
-                                    {profile_width*0.75}% {int(profile_height*0.2)}px,
-                                    {profile_width}% 0, 
-                                    {profile_width}% {profile_height}px
-                                );">
+                                clip-path: polygon({clip_path_points});">
                     </div>
                     <div style="margin-top: 10px;">
                         <p><b>Total Elevation Gain:</b> {elevation_gain:.1f}m</p>
                         <p><b>Elevation Range:</b> {elevation_range:.1f}m</p>
-                        <p><b>Average Grade:</b> {segment['average_grade']:.1f}% | <b>Maximum Grade:</b> {segment.get('maximum_grade', 'N/A')}%</p>
+                        <p><b>Average Grade:</b> {segment.get('average_grade', 0):.1f}% | <b>Maximum Grade:</b> {segment.get('maximum_grade', 'N/A')}%</p>
                     </div>
                 </div>
             """
         
-        if progress:
+        if progress and isinstance(progress, dict):
+            # Format dates to strings if they're datetime objects
+            best_effort_date = progress.get('best_effort_date', 'N/A')
+            first_effort_date = progress.get('first_effort_date', 'N/A')
+            last_effort_date = progress.get('last_effort_date', 'N/A')
+            
+            if hasattr(best_effort_date, 'strftime'):
+                best_effort_date = best_effort_date.strftime('%Y-%m-%d')
+            if hasattr(first_effort_date, 'strftime'):
+                first_effort_date = first_effort_date.strftime('%Y-%m-%d')
+            if hasattr(last_effort_date, 'strftime'):
+                last_effort_date = last_effort_date.strftime('%Y-%m-%d')
+            
+            best_effort_time = progress.get('best_effort_time', 'N/A')
+            pct_improvement = progress.get('pct_improvement', 0)
+            days_training = progress.get('days_training', 0)
+            effort_count = progress.get('effort_count', 0)
+            
             html += f"""
                 <h2>Performance Summary</h2>
                 <div class="stats-container">
                     <div class="stat-box">
                         <h3>Best Effort</h3>
-                        <p>{progress['best_effort_time']} seconds</p>
-                        <p>Date: {progress['best_effort_date']}</p>
+                        <p>{best_effort_time} seconds</p>
+                        <p>Date: {best_effort_date}</p>
                     </div>
                     <div class="stat-box">
                         <h3>Improvement</h3>
-                        <p class="highlight">{progress['pct_improvement']:.1f}%</p>
-                        <p>Over {progress['days_training']} days</p>
+                        <p class="highlight">{pct_improvement:.1f}%</p>
+                        <p>Over {days_training} days</p>
                     </div>
                     <div class="stat-box">
                         <h3>Attempts</h3>
-                        <p>{progress['effort_count']} efforts</p>
-                        <p>First: {progress['first_effort_date']}</p>
-                        <p>Latest: {progress['last_effort_date']}</p>
+                        <p>{effort_count} efforts</p>
+                        <p>First: {first_effort_date}</p>
+                        <p>Latest: {last_effort_date}</p>
                     </div>
             """
             

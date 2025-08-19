@@ -177,13 +177,14 @@ class TestSegmentVisualizer(unittest.TestCase):
         }
         self.mock_analyzer.get_seasonal_comparison.return_value = mock_seasonal
         
+        # Make sure this returns a dictionary not a float
         self.mock_analyzer.calculate_segment_progress.return_value = {
             'segment_name': MOCK_SEGMENT['name'],
-            'first_effort_date': dates[-1],
+            'first_effort_date': dates[-1].strftime('%Y-%m-%d'),
             'first_effort_time': 180,
-            'last_effort_date': dates[0],
+            'last_effort_date': dates[0].strftime('%Y-%m-%d'),
             'last_effort_time': 160,
-            'best_effort_date': dates[0],
+            'best_effort_date': dates[0].strftime('%Y-%m-%d'),
             'best_effort_time': 160,
             'time_improvement': 20,
             'pct_improvement': 11.1,
