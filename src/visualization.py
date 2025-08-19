@@ -600,6 +600,7 @@ class SegmentVisualizer:
                 <div class="header">
                     <h1>{segment['name']}</h1>
                     <p>Distance: {segment['distance']/1000:.2f} km | Average Grade: {segment['average_grade']:.1f}% | Location: {segment.get('city', 'N/A')}, {segment.get('country', 'N/A')}</p>
+                    <p>Elevation: Low {segment.get('elevation_low', 0):.1f}m | High {segment.get('elevation_high', 0):.1f}m | Gain {segment.get('total_elevation_gain', 0):.1f}m</p>
                 </div>
                 
                 <div class="nav-links">
@@ -613,6 +614,42 @@ class SegmentVisualizer:
                 <div class="map-container">
                     <h2>Segment Map</h2>
                     <iframe src="{map_filename}"></iframe>
+                </div>
+            """
+            
+        # Add elevation profile section
+        if segment.get('elevation_high') is not None and segment.get('elevation_low') is not None:
+            elevation_gain = segment.get('total_elevation_gain', segment.get('elevation_high', 0) - segment.get('elevation_low', 0))
+            elevation_range = segment.get('elevation_high', 0) - segment.get('elevation_low', 0)
+            
+            # Create a simple visual representation of the elevation profile
+            profile_width = 100
+            profile_height = 50
+            
+            # Simple ASCII-style elevation profile visual
+            html += f"""
+                <div class="stat-box" style="width: 100%; margin: 20px 0;">
+                    <h2>Elevation Profile</h2>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                        <span><b>Start:</b> {segment.get('elevation_low', 0):.1f}m</span>
+                        <span><b>Finish:</b> {segment.get('elevation_high', 0):.1f}m</span>
+                    </div>
+                    <div style="background: linear-gradient(to right, #8BC34A, #FFC107, #F44336); 
+                                height: {profile_height}px; width: {profile_width}%; 
+                                clip-path: polygon(
+                                    0 {profile_height}px, 
+                                    {profile_width/4}% {int(profile_height*0.7)}px, 
+                                    {profile_width/2}% {int(profile_height*0.4)}px,
+                                    {profile_width*0.75}% {int(profile_height*0.2)}px,
+                                    {profile_width}% 0, 
+                                    {profile_width}% {profile_height}px
+                                );">
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <p><b>Total Elevation Gain:</b> {elevation_gain:.1f}m</p>
+                        <p><b>Elevation Range:</b> {elevation_range:.1f}m</p>
+                        <p><b>Average Grade:</b> {segment['average_grade']:.1f}% | <b>Maximum Grade:</b> {segment.get('maximum_grade', 'N/A')}%</p>
+                    </div>
                 </div>
             """
         
