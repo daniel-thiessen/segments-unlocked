@@ -44,7 +44,7 @@ class RateLimiter:
     def __init__(self, window_size: int = 15 * 60, max_calls: int = 100):
         self.window_size = window_size  # in seconds
         self.max_calls = max_calls
-        self.calls = []
+        self.calls: List[datetime] = []
         self.daily_calls = 0
         self.daily_reset = datetime.now()
     
@@ -163,9 +163,25 @@ class StravaDatabase:
         cursor = self.conn.cursor()
         
         for effort in efforts:
+            # Skip None efforts or those with missing IDs
+            if effort is None or not hasattr(effort, 'id') or effort.id is None:
+                logger.warning("Skipping segment effort with no ID")
+                continue
+                
             # Check if the effort already exists
             cursor.execute("SELECT id FROM segment_efforts WHERE id = ?", (effort.id,))
             if cursor.fetchone():
+                continue
+            
+            # Make sure activity and segment exist
+            if (not hasattr(effort, 'activity') or effort.activity is None or 
+                not hasattr(effort.activity, 'id')):
+                logger.warning(f"Skipping effort {effort.id}: Missing activity information")
+                continue
+                
+            if (not hasattr(effort, 'segment') or effort.segment is None or 
+                not hasattr(effort.segment, 'id')):
+                logger.warning(f"Skipping effort {effort.id}: Missing segment information")
                 continue
                 
             # Insert the effort
@@ -177,11 +193,12 @@ class StravaDatabase:
                     max_heartrate, pr_rank, raw_data
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                effort.id, effort.activity.id, effort.segment.id, effort.name,
+                effort.id, effort.activity.id, effort.segment.id, 
+                effort.name if hasattr(effort, 'name') else f"Effort {effort.id}",
                 safe_duration_to_seconds(effort.elapsed_time),
                 safe_duration_to_seconds(effort.moving_time),
-                effort.start_date.isoformat() if effort.start_date else None,
-                float(effort.distance) if effort.distance else None,
+                effort.start_date.isoformat() if hasattr(effort, 'start_date') and effort.start_date else None,
+                float(effort.distance) if hasattr(effort, 'distance') and effort.distance else None,
                 float(effort.average_watts) if hasattr(effort, 'average_watts') and effort.average_watts else None,
                 1 if hasattr(effort, 'device_watts') and effort.device_watts else 0,  # Store as INTEGER
                 float(effort.average_heartrate) if hasattr(effort, 'average_heartrate') and effort.average_heartrate else None,
@@ -198,6 +215,11 @@ class StravaDatabase:
         cursor = self.conn.cursor()
         
         for segment in segments:
+            # Skip None segments or those with missing IDs
+            if segment is None or not hasattr(segment, 'id') or segment.id is None:
+                logger.warning("Skipping segment with no ID")
+                continue
+                
             # Extract start_latlng and end_latlng from segment
             start_latlng = None
             end_latlng = None
@@ -215,16 +237,20 @@ class StravaDatabase:
                     country, private, starred, raw_data, fetched_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                segment.id, segment.name, str(segment.activity_type) if segment.activity_type else None,
-                float(segment.distance) if segment.distance else None,
-                float(segment.average_grade) if segment.average_grade else None,
-                float(segment.maximum_grade) if segment.maximum_grade else None,
-                float(segment.elevation_high) if segment.elevation_high else None,
-                float(segment.elevation_low) if segment.elevation_low else None,
+                segment.id, 
+                segment.name if hasattr(segment, 'name') else f"Segment {segment.id}",
+                str(segment.activity_type) if hasattr(segment, 'activity_type') and segment.activity_type else None,
+                float(segment.distance) if hasattr(segment, 'distance') and segment.distance else None,
+                float(segment.average_grade) if hasattr(segment, 'average_grade') and segment.average_grade else None,
+                float(segment.maximum_grade) if hasattr(segment, 'maximum_grade') and segment.maximum_grade else None,
+                float(segment.elevation_high) if hasattr(segment, 'elevation_high') and segment.elevation_high else None,
+                float(segment.elevation_low) if hasattr(segment, 'elevation_low') and segment.elevation_low else None,
                 start_latlng, end_latlng,
                 segment.climb_category if hasattr(segment, 'climb_category') else None,
-                segment.city, segment.state, segment.country,
-                1 if segment.private else 0,
+                segment.city if hasattr(segment, 'city') else None, 
+                segment.state if hasattr(segment, 'state') else None, 
+                segment.country if hasattr(segment, 'country') else None,
+                1 if hasattr(segment, 'private') and segment.private else 0,
                 1 if hasattr(segment, 'starred') and segment.starred else 0,
                 str(segment),  # Store raw data
                 datetime.now().isoformat()  # Store the current time
@@ -273,15 +299,17 @@ class StravaBackfill:
         logger.info("Refreshing Strava access token")
         try:
             # Check if we have all required OAuth parameters
-            if not all([self.client_id, self.client_secret, self.refresh_token]):
+            if not self.client_id or not self.client_secret or not self.refresh_token:
                 logger.error("Missing required OAuth parameters for token refresh")
                 return False
             
             # Safe conversion of client_id to int
-            client_id_int = self.client_id
-            if not isinstance(client_id_int, int):
+            client_id_int = 0
+            if isinstance(self.client_id, int):
+                client_id_int = self.client_id
+            else:
                 try:
-                    client_id_int = int(client_id_int)
+                    client_id_int = int(str(self.client_id))
                 except (ValueError, TypeError):
                     logger.error(f"Invalid client_id: {self.client_id}, must be convertible to int")
                     return False
@@ -315,20 +343,32 @@ class StravaBackfill:
         processed_count = 0
         
         for activity in activities:
-            logger.info(f"Processing activity {activity['id']} from {activity['start_date']}")
+            if not activity or 'id' not in activity:
+                logger.warning("Skipping activity with missing ID")
+                continue
+                
+            start_date = activity.get('start_date', 'unknown date')
+            logger.info(f"Processing activity {activity['id']} from {start_date}")
             
             try:
                 # Wait if we're approaching rate limits
                 self.rate_limiter.wait_if_needed()
                 
                 # Fetch segment efforts
-                efforts = self.client.get_activity(activity['id']).segment_efforts
+                activity_data = self.client.get_activity(activity['id'])
                 
                 # Record the API call
                 self.rate_limiter.add_call()
                 
+                # Handle potential None or missing segment_efforts
+                if not activity_data or not hasattr(activity_data, 'segment_efforts'):
+                    logger.warning(f"Activity {activity['id']} has no segment_efforts attribute")
+                    # Mark as processed to avoid repeated failures
+                    self.db.mark_activity_processed(activity['id'])
+                    continue
+                
                 # Convert to list and handle None case
-                efforts_list = list(efforts) if efforts is not None else []
+                efforts_list = list(activity_data.segment_efforts) if activity_data.segment_efforts is not None else []
                 
                 # Store segment efforts in database
                 if efforts_list:
@@ -358,6 +398,10 @@ class StravaBackfill:
         segments = []
         
         for i, segment_id in enumerate(segment_ids[:batch_size]):
+            if segment_id is None:
+                logger.warning("Skipping segment with None ID")
+                continue
+                
             try:
                 # Wait if we're approaching rate limits
                 self.rate_limiter.wait_if_needed()
@@ -365,6 +409,11 @@ class StravaBackfill:
                 # Fetch segment details
                 segment = self.client.get_segment(segment_id)
                 
+                # Skip None segments
+                if segment is None:
+                    logger.warning(f"No data returned for segment {segment_id}")
+                    continue
+                    
                 # Record the API call
                 self.rate_limiter.add_call()
                 
