@@ -237,9 +237,30 @@ class SegmentVisualizer:
         # Get segment details
         segment = self.db.get_segment_by_id(segment_id)
         
-        if not segment or not segment['coordinate_points']:
-            logger.warning(f"No coordinate data found for segment {segment_id}")
+        if not segment:
+            logger.warning(f"Segment {segment_id} not found")
             return None
+            
+        if not segment.get('coordinate_points'):
+            logger.warning(f"No coordinate data found for segment {segment_id}")
+            
+            # Create a placeholder map with instructions
+            m = folium.Map(location=[45.5236, -122.6750], zoom_start=13)  # Default location
+            folium.Marker(
+                [45.5236, -122.6750],
+                popup=folium.Popup(
+                    f"<h3>No coordinate data available for {segment['name']}</h3>"
+                    f"<p>To show maps, fetch segment details from the Strava API using:</p>"
+                    f"<pre>python app.py --fetch-segment-details</pre>",
+                    max_width=300
+                ),
+                icon=folium.Icon(color='red', icon='info-sign')
+            ).add_to(m)
+            
+            if save_path:
+                m.save(save_path)
+            
+            return m
         
         # Decode polyline
         try:
@@ -305,6 +326,207 @@ class SegmentVisualizer:
             logger.info(f"Saved map to {save_path}")
             
         return m
+        
+    def create_activity_map(self, activity_id: int, save_path: Optional[str] = None) -> Any:
+        """
+        Create an interactive map showing all segments from an activity
+        
+        Args:
+            activity_id: Activity ID
+            save_path: Path to save the HTML map (optional)
+            
+        Returns:
+            Folium map
+        """
+        # Get the activity details
+        cursor = self.db.conn.execute(
+            'SELECT * FROM activities WHERE id = ?',
+            (activity_id,)
+        )
+        
+        row = cursor.fetchone()
+        activity = dict(row) if row is not None else None
+        
+        if not activity:
+            logger.warning(f"Activity {activity_id} not found")
+            return None
+        
+        # Get segments for this activity
+        segments = self.db.get_segments_by_activity(activity_id)
+        
+        if not segments:
+            logger.warning(f"No segments found for activity {activity_id}")
+            return None
+        
+        # Initialize map bounds
+        min_lat, max_lat = float('inf'), float('-inf')
+        min_lng, max_lng = float('inf'), float('-inf')
+        
+        # Check if we have any segments with coordinate data
+        has_coordinates = False
+        for segment in segments:
+            segment_id = segment['segment_id']
+            full_segment = self.db.get_segment_by_id(segment_id)
+            if full_segment and full_segment.get('coordinate_points'):
+                has_coordinates = True
+                break
+                
+        if not has_coordinates:
+            logger.warning(f"No segments with coordinate data found for activity {activity_id}. "
+                          "Maps require coordinate data from the Strava API.")
+            # Create a placeholder map with a message
+            m = folium.Map(location=[45.5236, -122.6750], zoom_start=13)  # Default location
+            folium.Marker(
+                [45.5236, -122.6750],
+                popup=folium.Popup(
+                    f"<h3>No coordinate data available</h3>"
+                    f"<p>Activity: {activity['name']}</p>"
+                    f"<p>To show maps, fetch segment details from the Strava API using:</p>"
+                    f"<pre>python app.py --fetch-segment-details</pre>",
+                    max_width=300
+                ),
+                icon=folium.Icon(color='red', icon='info-sign')
+            ).add_to(m)
+            
+            if save_path:
+                m.save(save_path)
+            
+            return m
+        
+        # Collect all segment coordinates
+        all_segments_coords = []
+        
+        for segment in segments:
+            segment_id = segment['segment_id']
+            
+            # Get the full segment details
+            full_segment = self.db.get_segment_by_id(segment_id)
+            
+            if not full_segment or not full_segment.get('coordinate_points'):
+                logger.warning(f"No coordinate data found for segment {segment_id}")
+                continue
+            
+            # Decode polyline
+            try:
+                points = polyline.decode(full_segment['coordinate_points'])
+                
+                # Update bounds
+                for point in points:
+                    min_lat = min(min_lat, point[0])
+                    max_lat = max(max_lat, point[0])
+                    min_lng = min(min_lng, point[1])
+                    max_lng = max(max_lng, point[1])
+                
+                all_segments_coords.append({
+                    'id': segment_id,
+                    'name': segment['segment_name'],
+                    'points': points,
+                    'time': segment['elapsed_time'],
+                    'pr_rank': segment.get('pr_rank'),
+                    'distance': segment['segment_distance'],
+                    'avg_grade': segment['average_grade'],
+                    'max_grade': segment['maximum_grade']
+                })
+            except Exception as e:
+                logger.error(f"Error decoding polyline for segment {segment_id}: {e}")
+                continue
+        
+        if not all_segments_coords:
+            logger.warning(f"No valid segment coordinates found for activity {activity_id}")
+            return None
+        
+        # Calculate map center
+        center_lat = (min_lat + max_lat) / 2
+        center_lng = (min_lng + max_lng) / 2
+        
+        # Create map
+        m = folium.Map(location=[center_lat, center_lng])
+        
+        # Add segments to map with different colors based on PR rank
+        colors = {
+            1: 'green',  # PR
+            None: 'blue'  # Regular effort
+        }
+        
+        # Add segments to map
+        for segment_data in all_segments_coords:
+            # Choose color based on PR rank
+            color = colors.get(segment_data['pr_rank'], 'orange')  # Default to orange for non-PR, non-None ranks
+            
+            # Format elapsed time
+            elapsed_time_formatted = f"{segment_data['time']//60}:{segment_data['time']%60:02d}"
+            
+            # Create popup content
+            popup_html = f"""
+            <h3>{segment_data['name']}</h3>
+            <p>Distance: {segment_data['distance']/1000:.2f} km</p>
+            <p>Grade: {segment_data['avg_grade']:.1f}% (max {segment_data['max_grade']:.1f}%)</p>
+            <p>Time: {elapsed_time_formatted}</p>
+            """
+            
+            if segment_data['pr_rank'] == 1:
+                popup_html += "<p><strong style='color:green;'>PR Effort!</strong></p>"
+            elif segment_data['pr_rank'] is not None:
+                popup_html += f"<p>PR Rank: #{segment_data['pr_rank']}</p>"
+            
+            # Add polyline for this segment
+            folium.PolyLine(
+                segment_data['points'],
+                color=color,
+                weight=5,
+                opacity=0.7,
+                tooltip=f"{segment_data['name']} ({elapsed_time_formatted})",
+                popup=folium.Popup(popup_html, max_width=300)
+            ).add_to(m)
+            
+            # Add start and end markers
+            start_coords = segment_data['points'][0]
+            end_coords = segment_data['points'][-1]
+            
+            folium.CircleMarker(
+                start_coords,
+                radius=5,
+                color=color,
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.7,
+                tooltip=f"Start: {segment_data['name']}"
+            ).add_to(m)
+            
+            folium.CircleMarker(
+                end_coords,
+                radius=5,
+                color=color,
+                fill=True,
+                fill_color=color,
+                fill_opacity=0.7,
+                tooltip=f"End: {segment_data['name']}"
+            ).add_to(m)
+        
+        # Add a legend
+        legend_html = """
+        <div style="position: fixed; 
+            bottom: 50px; right: 50px; width: 150px; height: 90px; 
+            border:2px solid grey; z-index:9999; font-size:14px;
+            background-color:white; padding: 10px;
+            ">
+            <p><span style="color:green; font-weight:bold;">▬</span> PR Effort</p>
+            <p><span style="color:orange; font-weight:bold;">▬</span> Top 10 Effort</p>
+            <p><span style="color:blue; font-weight:bold;">▬</span> Regular Effort</p>
+        </div>
+        """
+        folium.Element(legend_html).add_to(m)
+        
+        # Fit bounds to include all segments
+        if all_segments_coords:
+            m.fit_bounds([[min_lat, min_lng], [max_lat, max_lng]])
+        
+        # Save if requested
+        if save_path:
+            m.save(save_path)
+            logger.info(f"Saved activity map to {save_path}")
+        
+        return m
     
     def create_segment_dashboard(self, segment_id: int) -> str:
         """
@@ -346,6 +568,12 @@ class SegmentVisualizer:
         pace_plot_data = base64.b64encode(buf.read()).decode('utf-8')
         plt.close(fig_pace)
         
+        # Create map and save it
+        map_filename = f"segment_{segment_id}_map.html"
+        map_path = os.path.join(self.output_dir, map_filename)
+        segment_map = self.create_segment_map(segment_id, save_path=map_path)
+        has_map = segment_map is not None
+        
         # Create HTML content
         html = f"""
         <html>
@@ -358,8 +586,13 @@ class SegmentVisualizer:
                 .stats-container {{ display: flex; flex-wrap: wrap; }}
                 .stat-box {{ background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin: 10px; flex: 1; }}
                 .plot-container {{ margin: 20px 0; }}
+                .map-container {{ margin: 20px 0; height: 500px; }}
                 h1, h2, h3 {{ color: #333; }}
                 .highlight {{ color: #ff5722; font-weight: bold; }}
+                .nav-links {{ margin: 20px 0; }}
+                .nav-link {{ padding: 10px; background-color: #f0f0f0; text-decoration: none; color: #333; border-radius: 5px; margin-right: 10px; }}
+                .nav-link:hover {{ background-color: #e0e0e0; }}
+                iframe {{ border: 1px solid #ddd; border-radius: 5px; width: 100%; height: 100%; }}
             </style>
         </head>
         <body>
@@ -368,7 +601,20 @@ class SegmentVisualizer:
                     <h1>{segment['name']}</h1>
                     <p>Distance: {segment['distance']/1000:.2f} km | Average Grade: {segment['average_grade']:.1f}% | Location: {segment.get('city', 'N/A')}, {segment.get('country', 'N/A')}</p>
                 </div>
+                
+                <div class="nav-links">
+                    <a href="segments_summary.html" class="nav-link">Most Popular Segments</a>
+                    <a href="recent_activities.html" class="nav-link">Recent Activities</a>
+                </div>
         """
+        
+        if has_map:
+            html += f"""
+                <div class="map-container">
+                    <h2>Segment Map</h2>
+                    <iframe src="{map_filename}"></iframe>
+                </div>
+            """
         
         if progress:
             html += f"""
@@ -667,7 +913,26 @@ class SegmentVisualizer:
             formatted_date = date_obj.strftime("%Y-%m-%d %H:%M")
         except (ValueError, AttributeError):
             formatted_date = activity['start_date']
+            
+        # Create map and save it
+        map_filename = f"activity_{activity_id}_map.html"
+        map_path = os.path.join(self.output_dir, map_filename)
+        activity_map = self.create_activity_map(activity_id, save_path=map_path)
+        has_map = activity_map is not None
         
+        # Prepare the map HTML section
+        map_html = ""
+        if has_map:
+            map_html = f"""
+                <div class="map-container">
+                    <h2>Activity Map with Segments</h2>
+                    <p>Color legend: <span style="color:green; font-weight:bold;">Green = PR</span>, 
+                    <span style="color:orange; font-weight:bold;">Orange = Top 10</span>, 
+                    <span style="color:blue; font-weight:bold;">Blue = Regular</span></p>
+                    <iframe src="{map_filename}"></iframe>
+                </div>
+            """
+            
         # Create HTML content
         html = f"""
         <html>
@@ -690,6 +955,8 @@ class SegmentVisualizer:
                 .nav-link:hover {{ background-color: #e0e0e0; }}
                 .pr-rank {{ font-weight: bold; color: #ff5722; }}
                 .pr-rank-1 {{ color: #2e7d32; }}
+                .map-container {{ margin: 20px 0; height: 500px; }}
+                iframe {{ border: 1px solid #ddd; border-radius: 5px; width: 100%; height: 100%; }}
             </style>
         </head>
         <body>
@@ -709,6 +976,9 @@ class SegmentVisualizer:
                     <a href="recent_activities.html" class="nav-link">Recent Activities</a>
                 </div>
                 
+                {map_html}
+                
+                <h2>Segments Summary</h2>
                 <table>
                     <tr>
                         <th>Segment</th>
@@ -721,7 +991,12 @@ class SegmentVisualizer:
         """
         
         for segment in segments:
-            segment_url = f"segment_{segment['segment_id']}.html"
+            segment_id = segment['segment_id']
+            segment_url = f"segment_{segment_id}.html"
+            
+            # Ensure the segment dashboard exists
+            # This creates the segment page if it doesn't exist yet
+            self.create_segment_dashboard(segment_id)
             
             # Format time as mm:ss
             elapsed_time_formatted = f"{segment['elapsed_time']//60}:{segment['elapsed_time']%60:02d}"

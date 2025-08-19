@@ -164,7 +164,8 @@ def fetch_segment_efforts(db: SegmentDatabase, activities: List[Dict], refresh_t
     
     return total_efforts
 
-def generate_visualizations(db: SegmentDatabase, view_recent: bool = False, recent_days: int = 30) -> None:
+def generate_visualizations(db: SegmentDatabase, view_recent: bool = False, recent_days: int = 30, 
+                       specific_segment_id: Optional[int] = None, specific_activity_id: Optional[int] = None) -> None:
     """
     Generate visualizations for segments
     
@@ -172,11 +173,46 @@ def generate_visualizations(db: SegmentDatabase, view_recent: bool = False, rece
         db: Database connection
         view_recent: Whether to view segments by recent activity
         recent_days: Number of days to look back for recent segments/activities
+        specific_segment_id: ID of a specific segment to view (optional)
+        specific_activity_id: ID of a specific activity to view (optional)
     """
     analyzer = SegmentAnalyzer(db)
     visualizer = SegmentVisualizer(db, analyzer)
     
-    # Get popular segments
+    # View a specific segment dashboard
+    if specific_segment_id:
+        segment = db.get_segment_by_id(specific_segment_id)
+        if segment:
+            logger.info(f"Creating dashboard for segment: {segment['name']} (ID: {specific_segment_id})")
+            visualizer.create_segment_dashboard(specific_segment_id)
+            segment_path = os.path.join(os.path.dirname(__file__), 'output', f"segment_{specific_segment_id}.html")
+            logger.info(f"Opening dashboard: {segment_path}")
+            webbrowser.open(f"file://{segment_path}")
+        else:
+            logger.error(f"Segment with ID {specific_segment_id} not found")
+        return
+    
+    # View a specific activity dashboard
+    if specific_activity_id:
+        # Get the activity details
+        cursor = db.conn.execute(
+            'SELECT * FROM activities WHERE id = ?',
+            (specific_activity_id,)
+        )
+        row = cursor.fetchone()
+        activity = dict(row) if row is not None else None
+        
+        if activity:
+            logger.info(f"Creating dashboard for activity: {activity['name']} (ID: {specific_activity_id})")
+            visualizer.create_activity_segments_dashboard(specific_activity_id)
+            activity_path = os.path.join(os.path.dirname(__file__), 'output', f"activity_{specific_activity_id}.html")
+            logger.info(f"Opening dashboard: {activity_path}")
+            webbrowser.open(f"file://{activity_path}")
+        else:
+            logger.error(f"Activity with ID {specific_activity_id} not found")
+        return
+    
+    # Generate default visualizations
     popular_segments = db.get_popular_segments(10)
     logger.info(f"Generating visualizations for {len(popular_segments)} popular segments")
     
@@ -220,9 +256,15 @@ This application provides several functions:
     parser.add_argument('--limit', type=int, default=50, help='Number of activities to fetch')
     parser.add_argument('--visualize', action='store_true', help='Generate visualizations')
     parser.add_argument('--recent-activities', action='store_true',
-                        help='View recent activities and their segments')
-    parser.add_argument('--recent-days', type=int, default=30,
+                        help='View recent activities and their segments (default behavior)')
+    parser.add_argument('--segments-summary', action='store_true',
+                        help='View the segments summary dashboard instead of recent activities')
+    parser.add_argument('--recent-days', type=int, default=60,
                         help='Number of days to look back for recent activities')
+    parser.add_argument('--segment', type=int, metavar='ID',
+                        help='View a specific segment dashboard with ID')
+    parser.add_argument('--activity', type=int, metavar='ID',
+                        help='View segments from a specific activity with ID')
     parser.add_argument('--refresh-days', type=int, default=30, 
                         help='Number of days after which segment data should be refreshed')
     parser.add_argument('--import-archive', type=str, metavar='PATH',
@@ -287,9 +329,20 @@ This application provides several functions:
             effort_count = fetch_segment_efforts(db, activities, args.refresh_days)
             logger.info(f"Fetched and stored {effort_count} segment efforts")
         
-        if args.visualize or (not args.fetch and not args.fetch_new and not args.import_archive):
+        if args.visualize or args.segment or args.activity or (not args.fetch and not args.fetch_new and not args.import_archive):
             # Generate visualizations (default action if no other flags)
-            generate_visualizations(db, view_recent=args.recent_activities, recent_days=args.recent_days)
+            # Default to showing recent activities if no specific visualization flag is set
+            view_recent = args.recent_activities
+            
+            # If segments-summary is explicitly requested, override recent-activities
+            if args.segments_summary:
+                view_recent = False
+            # Default to recent activities view if no specific option is provided
+            elif not (args.segment or args.activity) and not args.recent_activities:
+                view_recent = True  # Set to True by default
+            
+            generate_visualizations(db, view_recent=view_recent, recent_days=args.recent_days,
+                                   specific_segment_id=args.segment, specific_activity_id=args.activity)
         
         db.close()
         logger.info("Application completed successfully")

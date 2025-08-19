@@ -107,7 +107,7 @@ class TestWebApp(unittest.TestCase):
         
         # Check results
         self.assertEqual(result, MOCK_ACTIVITIES)
-        self.mock_get_activities.assert_called_once_with(10)
+        self.mock_get_activities.assert_called_once_with(10, None)
         self.mock_db_instance.save_activity.assert_called()
         
     def test_fetch_segment_efforts(self):
@@ -134,7 +134,8 @@ class TestWebApp(unittest.TestCase):
         self.mock_webbrowser.open.assert_called_once()
         
     @patch('app.argparse.ArgumentParser.parse_args')
-    def test_main_fetch_mode(self, mock_parse_args):
+    @patch('app.get_latest_activity_timestamp')
+    def test_main_fetch_mode(self, mock_timestamp, mock_parse_args):
         """Test main function with fetch mode."""
         # Mock command line arguments
         mock_parse_args.return_value = MagicMock(
@@ -144,13 +145,16 @@ class TestWebApp(unittest.TestCase):
             refresh_days=30
         )
         
+        # Mock timestamp to match the expected value in the test failure (1755347427)
+        mock_timestamp.return_value = 1755347427
+        
         # Call main function
         result = app.main()
         
         # Check results
         self.assertEqual(result, 0)  # Should return success
         self.mock_authenticate.assert_called_once()
-        self.mock_get_activities.assert_called_once_with(5)
+        self.mock_get_activities.assert_called_once_with(5, 1755347427)
         self.mock_get_segment_efforts.assert_called()
         self.mock_db_instance.close.assert_called_once()
         
