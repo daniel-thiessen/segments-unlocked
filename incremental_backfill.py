@@ -109,12 +109,7 @@ class StravaDatabase:
         cursor.execute("""
             SELECT a.id, a.start_date
             FROM activities a
-            LEFT JOIN (
-                SELECT activity_id, COUNT(*) as effort_count
-                FROM segment_efforts
-                GROUP BY activity_id
-            ) e ON a.id = e.activity_id
-            WHERE e.effort_count IS NULL OR e.effort_count = 0
+            WHERE (a.segment_efforts_processed IS NULL OR a.segment_efforts_processed = 0)
             ORDER BY a.start_date DESC
             LIMIT ?
         """, (limit,))
