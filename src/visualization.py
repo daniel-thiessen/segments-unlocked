@@ -645,10 +645,11 @@ class SegmentVisualizer:
                 max_grade = avg_grade * 2 if avg_grade > 0 else 5
             
             # Create control points for the elevation profile
-            points = []
+            # Use float coordinates for more accurate rendering and to satisfy type checkers
+            points: List[Tuple[float, float]] = []
             
-            # Starting point
-            points.append((0, profile_height))  # Start at bottom left
+            # Starting point (use floats to match annotation)
+            points.append((0.0, float(profile_height)))  # Start at bottom left
             
             # Create a realistic elevation profile with varied gradient
             import random
@@ -703,7 +704,7 @@ class SegmentVisualizer:
                     # Ensure y stays within bounds
                     y_pos = max(0, min(profile_height, y_pos))
                     
-                    points.append((x_pos, y_pos))
+                    points.append((float(x_pos), float(y_pos)))
                     last_y = y_pos
             else:  # It's flat or a descent
                 # For descents, create a profile that starts higher and ends lower
@@ -723,12 +724,12 @@ class SegmentVisualizer:
                     y_pos = profile_height - (base_elev_change * factor / abs(elevation_gain) * profile_height)
                     y_pos = max(0, min(profile_height, y_pos))
                     
-                    points.append((x_pos, y_pos))
+                    points.append((float(x_pos), float(y_pos)))
                     last_y = y_pos
             
             # End point (top right corner) - should match the elevation_high
-            points.append((profile_width, 0))
-            points.append((profile_width, profile_height))  # Back to bottom to close the polygon
+            points.append((float(profile_width), 0.0))
+            points.append((float(profile_width), float(profile_height)))  # Back to bottom to close the polygon
             
             # Create clip-path polygon string from points
             clip_path_points = " ".join([f"{x}% {y}px" for x, y in points])

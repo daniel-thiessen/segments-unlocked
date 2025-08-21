@@ -72,13 +72,13 @@ class ArchiveImporter:
         activities_dir = os.path.join(directory, "activities")
         if not os.path.exists(activities_dir):
             activities_dir = directory  # Try the root directory
-            
+        
         # First try to find activity JSON files (some exports might have these)
         activity_files = glob.glob(os.path.join(activities_dir, "**", "*.json"), recursive=True)
         
         activities_count = 0
         segment_efforts_count = 0
-        segments = set()  # Track unique segments
+        segments: set[int] = set()  # Track unique segments
         
         # If JSON files exist, process them
         if activity_files:
@@ -102,7 +102,6 @@ class ArchiveImporter:
                     # Process segment efforts if available
                     segment_efforts = activity_data.get('segment_efforts', [])
                     segment_efforts_count += self._process_segment_efforts(segment_efforts, activity_data['id'], segments)
-                        
                 except Exception as e:
                     logger.error(f"Error processing activity file {activity_file}: {e}")
         
@@ -110,7 +109,6 @@ class ArchiveImporter:
         csv_file = os.path.join(directory, "activities.csv")
         if os.path.exists(csv_file):
             logger.info(f"Processing activities CSV file: {csv_file}")
-            
             try:
                 with open(csv_file, 'r', encoding='utf-8') as f:
                     reader = csv.DictReader(f)
@@ -140,15 +138,16 @@ class ArchiveImporter:
                         # Only fetch segment efforts if explicitly requested
                         if fetch_segments:
                             # Try to fetch segment efforts from API if needed (will respect rate limits)
-                            efforts_count, segment_count = self._fetch_segment_efforts(activity_id, segments)
+                            efforts_count, _segment_count = self._fetch_segment_efforts(activity_id, segments)
                             segment_efforts_count += efforts_count
-                        
                     except Exception as e:
                         logger.warning(f"Error processing activity {row.get('Activity ID', 'unknown')}: {e}")
             except Exception as e:
                 logger.error(f"Error processing activities CSV file: {e}")
         
-        logger.info(f"Imported {activities_count} activities, {segment_efforts_count} segment efforts, {len(segments)} segments")
+        logger.info(
+            f"Imported {activities_count} activities, {segment_efforts_count} segment efforts, {len(segments)} segments"
+        )
         return activities_count, segment_efforts_count, len(segments)
     
     def _build_activity_from_csv(self, row: Dict[str, str]) -> Dict:
@@ -228,7 +227,7 @@ class ArchiveImporter:
         # Filter out None values
         return {k: v for k, v in activity.items() if v is not None}
     
-    def _process_segment_efforts(self, efforts: List[Dict], activity_id: int, segments: set) -> int:
+    def _process_segment_efforts(self, efforts: List[Dict], activity_id: int, segments: set[int]) -> int:
         """
         Process segment efforts and save them to the database
         
@@ -256,8 +255,19 @@ class ArchiveImporter:
             # Process segment data
             segment = effort.get('segment')
             if isinstance(segment, dict) and 'id' in segment:
-                # Store segment ID to count unique segments
-                segments.add(segment['id'])
+                # Normalize segment id to int when possible
+                seg_id = segment['id']
+                if isinstance(seg_id, str):
+                    try:
+                        seg_id_int = int(seg_id)
+                    except ValueError:
+                        seg_id_int = None
+                elif isinstance(seg_id, int):
+                    seg_id_int = seg_id
+                else:
+                    seg_id_int = None
+                if seg_id_int is not None:
+                    segments.add(seg_id_int)
                 
                 # Save segment data
                 self.db.save_segment(segment)

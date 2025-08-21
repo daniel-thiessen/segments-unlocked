@@ -1,5 +1,5 @@
 import time
-import requests
+import requests  # type: ignore[import]
 import random
 from typing import List, Dict, Any, Optional
 import logging

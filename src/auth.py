@@ -1,4 +1,4 @@
-import requests
+import requests  # type: ignore[import]
 import time
 import webbrowser
 from http.server import HTTPServer as BaseHTTPServer, BaseHTTPRequestHandler

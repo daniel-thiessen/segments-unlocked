@@ -81,13 +81,13 @@ class ArchiveImporter:
         activities_dir = os.path.join(directory, "activities")
         if not os.path.exists(activities_dir):
             activities_dir = directory  # Try the root directory
-            
+        
         # First try to find activity JSON files (some exports might have these)
         activity_files = glob.glob(os.path.join(activities_dir, "**", "*.json"), recursive=True)
         
         activities_count = 0
         segment_efforts_count = 0
-        segments = set()  # Track unique segments
+        segments: set[int] = set()  # Track unique segments
         
         # If JSON files exist, process them
         if activity_files:
@@ -279,7 +279,8 @@ class ArchiveImporter:
                     try:
                         # Extract data from message fields
                         segment_data = {}
-                        segment_id = None
+                        # segment_id can be int or str depending on FIT file content
+                        segment_id: Optional[int | str] = None
                         
                         # Convert the fields to a dictionary
                         for field in message.fields:
